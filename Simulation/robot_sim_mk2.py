@@ -6,7 +6,7 @@ import math
 # --- Configuration ---
 # Screen
 SCREEN_WIDTH = 1000
-SCREEN_HEIGHT = 800
+SCREEN_HEIGHT = 700
 
 # Colors
 COLOR_BACKGROUND = (10, 10, 10)
@@ -14,8 +14,11 @@ COLOR_WALL = (200, 200, 200)
 COLOR_ROBOT = (255, 0, 0)
 COLOR_LIDAR_POINT = (0, 180, 0)
 COLOR_ESTIMATED_WALL = (100, 255, 100)
-COLOR_INLIER_POINTS = (0, 100, 255) # Blue for inliers
+COLOR_INLIER_POINTS = (0, 100, 255) 
 COLOR_TEXT = (255, 255, 255)
+# --- NEW COLORS ---
+COLOR_PERPENDICULAR = (0, 170, 255)       # Light Blue for perpendicular lines
+COLOR_NON_PERPENDICULAR = (200, 160, 255) # Light Purple for non-perpendicular
 
 # Robot properties
 ROBOT_SIZE = 15
@@ -23,22 +26,100 @@ ROBOT_SIZE = 15
 # LiDAR properties
 LIDAR_RANGE = 3000
 LIDAR_RAYS = 360
-LIDAR_INACCURACY = 2.0
+LIDAR_INACCURACY = 8.0
 
-# --- RANSAC & Clustering Parameters ---
-RANSAC_ITERATIONS = 80
-RANSAC_THRESHOLD_DISTANCE = 5.0
-RANSAC_MIN_INLIERS = 10
-
-# --- NEW TUNABLE VARIABLE ---
-# After RANSAC finds points on a line, this is the max distance between
-# two of those points for them to be considered part of the same contiguous wall.
+# RANSAC & Clustering Parameters
+RANSAC_ITERATIONS = 30
+RANSAC_THRESHOLD_DISTANCE = 14.0
+RANSAC_MIN_INLIERS = 20
 MAX_POINT_DISTANCE = 50.0
+# --- NEW ANGLE THRESHOLD ---
+PERPENDICULAR_ANGLE_THRESHOLD = 5.0 # Degrees
 
 # --- Course Definition ---
+COURSE_TOP_LEFT = 50
 WALLS = [
-    (50, 50, 750, 50), (750, 50, 750, 750), (750, 750, 50, 750), (50, 750, 50, 50),
-    (250, 250, 550, 250), (550, 250, 550, 550), (550, 550, 250, 550), (250, 550, 250, 250),
+    # outer boundary
+    (0  + COURSE_TOP_LEFT, 0  + COURSE_TOP_LEFT,
+     600 + COURSE_TOP_LEFT, 0  + COURSE_TOP_LEFT),
+    (600 + COURSE_TOP_LEFT, 0  + COURSE_TOP_LEFT,
+     600 + COURSE_TOP_LEFT, 600 + COURSE_TOP_LEFT),
+    (600 + COURSE_TOP_LEFT, 600 + COURSE_TOP_LEFT,
+     0   + COURSE_TOP_LEFT, 600 + COURSE_TOP_LEFT),
+    (0   + COURSE_TOP_LEFT, 600 + COURSE_TOP_LEFT,
+     0   + COURSE_TOP_LEFT, 0   + COURSE_TOP_LEFT),
+
+    # inner square
+    (200 + COURSE_TOP_LEFT, 200 + COURSE_TOP_LEFT,
+     400 + COURSE_TOP_LEFT, 200 + COURSE_TOP_LEFT),
+    (400 + COURSE_TOP_LEFT, 200 + COURSE_TOP_LEFT,
+     400 + COURSE_TOP_LEFT, 400 + COURSE_TOP_LEFT),
+    (400 + COURSE_TOP_LEFT, 400 + COURSE_TOP_LEFT,
+     200 + COURSE_TOP_LEFT, 400 + COURSE_TOP_LEFT),
+    (200 + COURSE_TOP_LEFT, 400 + COURSE_TOP_LEFT,
+     200 + COURSE_TOP_LEFT, 200 + COURSE_TOP_LEFT),
+
+    # obstacle Top Left
+    (195 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+     205 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT),
+    (195 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+     195 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+    (205 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+     205 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+    (195 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT,
+     205 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+
+     (195 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     205 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT),
+    (195 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     195 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+    (205 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     205 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+    (195 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT,
+     205 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+
+     # obstacle Top Mid
+    (295 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+    305 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT),
+    (295 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+     295 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+    (305 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+     305 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+    (295 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT,
+     305 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+
+    (295 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     305 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT),
+    (295 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     295 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+    (305 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     305 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+    (295 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT,
+     305 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+
+    # obstacle Top Right
+    (395 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT, 
+     405 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT),
+    (395 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+     395 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+    (405 + COURSE_TOP_LEFT,  80 + COURSE_TOP_LEFT,
+     405 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+    (395 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT,
+     405 + COURSE_TOP_LEFT,  90 + COURSE_TOP_LEFT),
+
+    (395 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     405 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT),
+    (395 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     395 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+    (405 + COURSE_TOP_LEFT,  120 + COURSE_TOP_LEFT,
+     405 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+    (395 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT,
+     405 + COURSE_TOP_LEFT,  130 + COURSE_TOP_LEFT),
+
+     
+
+
+     
 ]
 
 class Robot:
@@ -52,106 +133,64 @@ class Robot:
         self.x, self.y = x, y
 
     def simulate_lidar(self, walls):
-        # This function is unchanged
         self.lidar_points = []
         for i in range(LIDAR_RAYS):
             ray_angle_rad = math.radians((360 / LIDAR_RAYS) * i)
-            end_x = self.x + LIDAR_RANGE * math.cos(ray_angle_rad)
-            end_y = self.y + LIDAR_RANGE * math.sin(ray_angle_rad)
+            end_x, end_y = self.x + LIDAR_RANGE * math.cos(ray_angle_rad), self.y + LIDAR_RANGE * math.sin(ray_angle_rad)
             closest_dist, hit_point = LIDAR_RANGE, None
             for wall in walls:
                 p, d = line_intersection((self.x, self.y), (end_x, end_y), (wall[0], wall[1]), (wall[2], wall[3]))
-                if p and d < closest_dist:
-                    closest_dist, hit_point = d, p
+                if p and d < closest_dist: closest_dist, hit_point = d, p
             if hit_point:
                 dist_with_error = closest_dist + random.uniform(-LIDAR_INACCURACY, LIDAR_INACCURACY)
                 self.lidar_points.append((self.x + dist_with_error * math.cos(ray_angle_rad), self.y + dist_with_error * math.sin(ray_angle_rad)))
 
     def estimate_walls(self):
-        """Processes LiDAR points using RANSAC followed by a contiguity check."""
-        self.estimated_walls = []
-        self.inlier_points_for_viz = []
-        
+        self.estimated_walls, self.inlier_points_for_viz = [], []
         remaining_points = list(self.lidar_points)
-        
         while len(remaining_points) > RANSAC_MIN_INLIERS:
             best_inliers = []
-            
             for _ in range(RANSAC_ITERATIONS):
                 if len(remaining_points) < 2: break
                 p1, p2 = random.sample(remaining_points, 2)
                 current_inliers = [p for p in remaining_points if distance_from_point_to_line(p, p1, p2) < RANSAC_THRESHOLD_DISTANCE]
-                if len(current_inliers) > len(best_inliers):
-                    best_inliers = current_inliers
-
+                if len(current_inliers) > len(best_inliers): best_inliers = current_inliers
             if len(best_inliers) > RANSAC_MIN_INLIERS:
-                # --- NEW: Contiguity Check Step ---
-                # Cluster the RANSAC inliers by distance to find contiguous segments
                 contiguous_clusters = self.cluster_inliers_by_distance(best_inliers)
-                
                 points_to_remove = set()
                 for cluster in contiguous_clusters:
                     if len(cluster) > RANSAC_MIN_INLIERS:
-                        # This cluster is a valid wall segment
                         final_wall_segment = self.fit_line_with_pca(cluster)
                         if final_wall_segment:
                             self.estimated_walls.append(final_wall_segment)
                             self.inlier_points_for_viz.extend(cluster)
-                        
-                        # Mark these points for removal from the main pool
-                        for point in cluster:
-                            points_to_remove.add(point)
-                
-                if not points_to_remove: # No valid segments found, break loop
-                    break
-                    
+                        for point in cluster: points_to_remove.add(point)
+                if not points_to_remove: break
                 remaining_points = [p for p in remaining_points if p not in points_to_remove]
-            else:
-                break # No more significant lines found
+            else: break
 
     def cluster_inliers_by_distance(self, inliers):
-        """Takes a set of inliers and splits them into contiguous groups."""
         if not inliers: return []
-        
-        # Project points onto their principal component axis and sort them
         data = np.array(inliers)
         mean = np.mean(data, axis=0)
         direction_vector = np.linalg.eigh(np.cov(data - mean, rowvar=False))[1][:, -1]
-        
-        # Create a list of (projection_value, original_point)
-        projected = [(np.dot(p - mean, direction_vector), p) for p in inliers]
-        projected.sort(key=lambda x: x[0])
-        
+        projected = sorted([(np.dot(p - mean, direction_vector), p) for p in inliers], key=lambda x: x[0])
         sorted_inliers = [p for _, p in projected]
-        
-        # Now cluster the sorted points by distance
-        clusters = []
-        current_cluster = [sorted_inliers[0]]
-        
+        clusters, current_cluster = [], [sorted_inliers[0]]
         for i in range(1, len(sorted_inliers)):
-            p1 = sorted_inliers[i-1]
-            p2 = sorted_inliers[i]
-            dist = math.hypot(p1[0] - p2[0], p1[1] - p2[1])
-            
-            if dist < MAX_POINT_DISTANCE:
-                current_cluster.append(p2)
-            else:
-                clusters.append(current_cluster)
-                current_cluster = [p2]
+            p1, p2 = sorted_inliers[i-1], sorted_inliers[i]
+            if math.hypot(p1[0] - p2[0], p1[1] - p2[1]) < MAX_POINT_DISTANCE: current_cluster.append(p2)
+            else: clusters.append(current_cluster); current_cluster = [p2]
         clusters.append(current_cluster)
-        
         return clusters
 
     def fit_line_with_pca(self, points):
-        # This function is unchanged
         if len(points) < 2: return None
         data = np.array(points)
         mean = np.mean(data, axis=0)
         direction_vector = np.linalg.eigh(np.cov(data - mean, rowvar=False))[1][:, -1]
-        t_start = np.dot(np.array(points[0]) - mean, direction_vector)
-        t_end = np.dot(np.array(points[-1]) - mean, direction_vector)
-        line_start = mean + t_start * direction_vector
-        line_end = mean + t_end * direction_vector
+        t_start, t_end = np.dot(np.array(points[0]) - mean, direction_vector), np.dot(np.array(points[-1]) - mean, direction_vector)
+        line_start, line_end = mean + t_start * direction_vector, mean + t_end * direction_vector
         return (line_start.tolist(), line_end.tolist())
 
 # --- Helper Functions ---
@@ -172,12 +211,21 @@ def line_intersection(p1, p2, p3, p4):
         return (px, py), math.hypot(px - x1, py - y1)
     return None, float('inf')
 
+def find_closest_point_on_segment(p, a, b):
+    p_np, a_np, b_np = np.array(p), np.array(a), np.array(b)
+    ab, ap = b_np - a_np, p_np - a_np
+    ab_len_sq = np.dot(ab, ab)
+    if ab_len_sq == 0: return a
+    t = np.dot(ap, ab) / ab_len_sq
+    return tuple(a_np + max(0, min(1, t)) * ab)
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Wall Estimation using Hybrid RANSAC + Contiguity Check")
+    pygame.display.set_caption("Wall Estimation with Perpendicularity Check")
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 28)
+    small_font = pygame.font.Font(None, 22)
     robot = Robot(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
     running = True
 
@@ -192,20 +240,52 @@ def main():
         screen.fill(COLOR_BACKGROUND)
         for wall in WALLS: pygame.draw.line(screen, COLOR_WALL, (wall[0], wall[1]), (wall[2], wall[3]), 2)
         
-        # Draw all lidar points in a faded color
-        for p in robot.lidar_points:
-            pygame.draw.circle(screen, (50,50,50), p, 2)
-        
-        # Highlight the inlier points that belong to a final, contiguous wall
-        for p in robot.inlier_points_for_viz:
-            pygame.draw.circle(screen, COLOR_INLIER_POINTS, p, 3)
-
+        for p in robot.lidar_points: pygame.draw.circle(screen, (50,50,50), p, 2)
+        for p in robot.inlier_points_for_viz: pygame.draw.circle(screen, COLOR_INLIER_POINTS, p, 3)
         for wall in robot.estimated_walls: pygame.draw.line(screen, COLOR_ESTIMATED_WALL, wall[0], wall[1], 5)
         
-        pygame.draw.circle(screen, COLOR_ROBOT, (robot.x, robot.y), ROBOT_SIZE)
-        pygame.draw.circle(screen, (255,255,255), (robot.x, robot.y), ROBOT_SIZE, 1)
+        robot_pos = (robot.x, robot.y)
+        for wall_segment in robot.estimated_walls:
+            # --- NEW LOGIC FOR CONDITIONAL COLORING ---
+            
+            # 1. Find the closest point on the wall segment
+            p_start, p_end = wall_segment[0], wall_segment[1]
+            closest_point = find_closest_point_on_segment(robot_pos, p_start, p_end)
+            distance = math.hypot(robot_pos[0] - closest_point[0], robot_pos[1] - closest_point[1])
+            
+            # 2. Define the vectors
+            vec_robot_to_point = np.array(closest_point) - np.array(robot_pos)
+            vec_wall = np.array(p_end) - np.array(p_start)
+            
+            # 3. Calculate the angle between them
+            angle_deg = 90 # Default to non-perpendicular if vectors are zero
+            mag_robot_vec = np.linalg.norm(vec_robot_to_point)
+            mag_wall_vec = np.linalg.norm(vec_wall)
+            
+            if mag_robot_vec > 0 and mag_wall_vec > 0:
+                # Find angle between robot-to-point and the wall itself
+                dot_product = np.dot(vec_robot_to_point, vec_wall)
+                cos_theta = dot_product / (mag_robot_vec * mag_wall_vec)
+                cos_theta = np.clip(cos_theta, -1.0, 1.0)
+                angle_deg = abs(90 - math.degrees(math.acos(cos_theta)))
 
-        instruction_text = font.render("Move mouse to control robot. Blue dots are final, contiguous inliers.", True, COLOR_TEXT)
+            # 4. Choose color based on the angle
+            line_color = COLOR_PERPENDICULAR if angle_deg <= PERPENDICULAR_ANGLE_THRESHOLD else COLOR_NON_PERPENDICULAR
+            
+            # 5. Draw the line and text
+            pygame.draw.line(screen, line_color, robot_pos, closest_point, 2)
+            
+            dist_text_str = f"{distance:.0f}"
+            text_surface = small_font.render(dist_text_str, True, COLOR_TEXT)
+            mid_point = ((robot_pos[0] + closest_point[0]) / 2, (robot_pos[1] + closest_point[1]) / 2)
+            text_rect = text_surface.get_rect(center=mid_point)
+            pygame.draw.rect(screen, COLOR_BACKGROUND, text_rect.inflate(6, 4))
+            screen.blit(text_surface, text_rect)
+        
+        pygame.draw.circle(screen, COLOR_ROBOT, robot_pos, ROBOT_SIZE)
+        pygame.draw.circle(screen, (255,255,255), robot_pos, ROBOT_SIZE, 1)
+
+        instruction_text = font.render("Blue: Perpendicular distance. Purple: Distance to corner.", True, COLOR_TEXT)
         screen.blit(instruction_text, (10, 10))
 
         pygame.display.flip()
