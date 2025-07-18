@@ -81,13 +81,16 @@ INNER_TR = (400 + COURSE_TOP_LEFT, 200 + COURSE_TOP_LEFT)
 INNER_BL = (200 + COURSE_TOP_LEFT, 400 + COURSE_TOP_LEFT)
 INNER_BR = (400 + COURSE_TOP_LEFT, 400 + COURSE_TOP_LEFT)
 
+# Direction of Travel
+DIRECTION_OF_TRAVEL = "clockwise"  # Can be "clockwise" or "anticlockwise"
+
 # --- Ray Persistence Configuration ---
 RAY_PERSISTENCE_DURATION = 1000  # milliseconds
 
 ray_cache = {}
 
 
-SHOW_GRID = False
+SHOW_GRID = True
 COURSE_WALLS = [
     (0+COURSE_TOP_LEFT, 0+COURSE_TOP_LEFT, COURSE_WIDTH+COURSE_TOP_LEFT, 0+COURSE_TOP_LEFT),
     (COURSE_WIDTH+COURSE_TOP_LEFT, 0+COURSE_TOP_LEFT, COURSE_WIDTH+COURSE_TOP_LEFT, COURSE_WIDTH+COURSE_TOP_LEFT),
@@ -278,6 +281,7 @@ class Robot:
         self.sharp_turn_locations = []
         self.reverse_timer_start = 0
         self.current_segment = 1
+        self.last_replan_attempt = 0
 
     def set_path(self, path):
         if path:
@@ -479,7 +483,7 @@ class ObstacleManager:
         self.debug_rays.clear() # <<< ADD THIS LINE
 
     # <<< CHANGE THE SIGNATURE OF THIS FUNCTION
-    def update(self, current_frame_clusters, walls_for_validation, robot_position, all_physical_walls):
+    def update(self, current_frame_clusters, walls_for_validation, robot_position, all_physical_walls, obstacles_for_drawing):
         # (The first part of the function remains the same)
         invalidated_confirmed_indices = [i for i, obs in enumerate(self.confirmed_obstacles) if check_obstacle_wall_collision(obs, walls_for_validation)]
         for i in sorted(invalidated_confirmed_indices, reverse=True): del self.confirmed_obstacles[i]
@@ -499,14 +503,21 @@ class ObstacleManager:
             else: self.potential_obstacles.append({'center': cluster['center'], 'radius': cluster['radius'], 'confidence': OBSTACLE_CONFIDENCE_INCREMENT, 'seen_this_frame': True})
         
         newly_confirmed_obstacles = []
-        newly_confirmed_indices = [i for i, pot_obs in enumerate(self.potential_obstacles) if pot_obs['confidence'] >= OBSTACLE_CONFIRMATION_THRESHOLD and not any(math.hypot(c['center'][0]-pot_obs['center'][0], c['center'][1]-pot_obs['center'][1]) < (c['radius']+pot_obs['radius']) for c in self.confirmed_obstacles)]
+        newly_confirmed_indices = [i for i, pot_obs in enumerate(self.potential_obstacles) 
+                                 if pot_obs['confidence'] >= OBSTACLE_CONFIRMATION_THRESHOLD 
+                                 and not any(math.hypot(c['center'][0] - pot_obs['center'][0], 
+                                                      c['center'][1] - pot_obs['center'][1]) < (c['radius'] + pot_obs['radius']) 
+                                           for c in self.confirmed_obstacles)]
         
         for i in sorted(newly_confirmed_indices, reverse=True):
             obs_to_confirm = self.potential_obstacles.pop(i)
             print(f"New obstacle confirmed: {obs_to_confirm['center']} with radius {obs_to_confirm['radius']}, confidence {obs_to_confirm['confidence']}")
             obs_to_confirm['segment'] = self.getblockSegment(obs_to_confirm['center'])
 
-            # <<< REPLACE THE OLD RAYCAST CALL WITH THIS NEW LOGIC
+            # Detect obstacle color
+            is_obstacle, obstacle_color = get_obstacle_at_coord(int(obs_to_confirm['center'][0]), int(obs_to_confirm['center'][1]), obstacles_for_drawing)
+            obs_to_confirm['color'] = obstacle_color if is_obstacle else COLOR_OBSTACLE_RED  # Default to red if not detected
+
             # Use the new function to find where the ray would hit
             hit_point = cast_ray_and_find_hit(robot_position, obs_to_confirm['center'], all_physical_walls)
             if hit_point:
@@ -519,7 +530,6 @@ class ObstacleManager:
                 
             else:
                 print("Raycast did not hit any physical wall.")
-            # >>> END OF REPLACEMENT
 
             self.confirmed_obstacles.append(obs_to_confirm)
             newly_confirmed_obstacles.append(obs_to_confirm)
@@ -556,6 +566,229 @@ class ObstacleManager:
         for obs in self.potential_obstacles: alpha = min(200, 20 + int(obs['confidence'] * 40)); pygame.draw.circle(s, (*COLOR_OBSTACLE_POTENTIAL[:3], alpha), obs['center'], obs['radius'])
         screen.blit(s, (0,0))
 
+    def remove_obstacles(self, obstacles_to_remove):
+        """Remove specified obstacles from confirmed obstacles list."""
+        for obs_to_remove in obstacles_to_remove:
+            # Remove from confirmed obstacles
+            for i, confirmed_obs in enumerate(self.confirmed_obstacles):
+                if (confirmed_obs['center'][0] == obs_to_remove['center'][0] and 
+                    confirmed_obs['center'][1] == obs_to_remove['center'][1]):
+                    print(f"Removing obstacle at {confirmed_obs['center']}")
+                    del self.confirmed_obstacles[i]
+                    break
+            
+            # Also remove from potential obstacles if present
+            for i, potential_obs in enumerate(self.potential_obstacles):
+                if (potential_obs['center'][0] == obs_to_remove['center'][0] and 
+                    potential_obs['center'][1] == obs_to_remove['center'][1]):
+                    del self.potential_obstacles[i]
+                    break
+
+def create_dynamic_wall_for_obstacle(obstacle_center, obstacle_color, segment, direction_of_travel):
+    """
+    Create a dynamic wall based on obstacle color and direction of travel.
+    Wall length is limited to 200 pixels maximum.
+    
+    Args:
+        obstacle_center: (x, y) position of the obstacle
+        obstacle_color: Color of the obstacle (red or green)
+        segment: Current segment (1=Top, 2=Right, 3=Bottom, 4=Left)
+        direction_of_travel: "clockwise" or "anticlockwise"
+    
+    Returns:
+        tuple: (start_x, start_y, end_x, end_y) representing the wall
+    """
+    cx, cy = obstacle_center
+    MAX_WALL_LENGTH = 200
+    
+    # Determine if we should pass on the right or left based on color and direction
+    if direction_of_travel == "clockwise":
+        # For clockwise: red obstacles on right, green on left
+        pass_on_right = (obstacle_color == COLOR_OBSTACLE_RED)
+    else:
+        # For anticlockwise: green obstacles on right, red on left
+        pass_on_right = (obstacle_color == COLOR_OBSTACLE_GREEN)
+    
+    # Create walls based on segment and passing side
+    if segment == 1:  # Top segment
+        if pass_on_right:
+            # Create wall extending down from obstacle
+            wall_end_y = min(cy + MAX_WALL_LENGTH, COURSE_TOP_LEFT + COURSE_WIDTH)
+            wall_end = (cx, wall_end_y)
+        else:
+            # Create wall extending up from obstacle
+            wall_end_y = max(cy - MAX_WALL_LENGTH, COURSE_TOP_LEFT)
+            wall_end = (cx, wall_end_y)
+    elif segment == 2:  # Right segment
+        if pass_on_right:
+            # Create wall extending left from obstacle
+            wall_end_x = max(cx - MAX_WALL_LENGTH, COURSE_TOP_LEFT)
+            wall_end = (wall_end_x, cy)
+        else:
+            # Create wall extending right from obstacle
+            wall_end_x = min(cx + MAX_WALL_LENGTH, COURSE_TOP_LEFT + COURSE_WIDTH)
+            wall_end = (wall_end_x, cy)
+    elif segment == 3:  # Bottom segment
+        if pass_on_right:
+            # Create wall extending up from obstacle
+            wall_end_y = max(cy - MAX_WALL_LENGTH, COURSE_TOP_LEFT)
+            wall_end = (cx, wall_end_y)
+        else:
+            # Create wall extending down from obstacle
+            wall_end_y = min(cy + MAX_WALL_LENGTH, COURSE_TOP_LEFT + COURSE_WIDTH)
+            wall_end = (cx, wall_end_y)
+    elif segment == 4:  # Left segment
+        if pass_on_right:
+            # Create wall extending right from obstacle
+            wall_end_x = min(cx + MAX_WALL_LENGTH, COURSE_TOP_LEFT + COURSE_WIDTH)
+            wall_end = (wall_end_x, cy)
+        else:
+            # Create wall extending left from obstacle
+            wall_end_x = max(cx - MAX_WALL_LENGTH, COURSE_TOP_LEFT)
+            wall_end = (wall_end_x, cy)
+    else:
+        # Default behavior for unknown segments
+        if abs(cy - COURSE_TOP_LEFT) < abs(cy - (COURSE_TOP_LEFT + COURSE_WIDTH)):
+            wall_end_y = max(cy - MAX_WALL_LENGTH, COURSE_TOP_LEFT)
+        else:
+            wall_end_y = min(cy + MAX_WALL_LENGTH, COURSE_TOP_LEFT + COURSE_WIDTH)
+        wall_end = (cx, wall_end_y)
+    
+    return (cx, cy, wall_end[0], wall_end[1])
+
+def create_dynamic_wall_for_obstacle_group(obstacle_group, direction_of_travel):
+    """
+    Create a dynamic wall for a group of obstacles.
+    
+    Args:
+        obstacle_group: List of obstacles in the group
+        direction_of_travel: "clockwise" or "anticlockwise"
+    
+    Returns:
+        tuple: (start_x, start_y, end_x, end_y) representing the wall
+    """
+    if not obstacle_group:
+        return None
+    
+    # Use the first obstacle's properties as representative
+    representative_obstacle = obstacle_group[0]
+    
+    # Calculate the bounding box of all obstacles in the group
+    min_x = min(obs['center'][0] for obs in obstacle_group)
+    max_x = max(obs['center'][0] for obs in obstacle_group)
+    min_y = min(obs['center'][1] for obs in obstacle_group)
+    max_y = max(obs['center'][1] for obs in obstacle_group)
+    
+    # Use the center of the bounding box as the wall origin
+    group_center = ((min_x + max_x) / 2, (min_y + max_y) / 2)
+    
+    # Create wall using the representative obstacle's color and segment
+    return create_dynamic_wall_for_obstacle(
+        group_center,
+        representative_obstacle.get('color', COLOR_OBSTACLE_RED),
+        representative_obstacle['segment'],
+        direction_of_travel
+    )
+
+def is_direction_allowed(current_pos, next_pos, segment, direction_of_travel):
+    """
+    Check if a movement direction is allowed based on the direction of travel and current segment.
+    
+    Args:
+        current_pos: Current (x, y) position
+        next_pos: Next (x, y) position
+        segment: Current segment (1=Top, 2=Right, 3=Bottom, 4=Left)
+        direction_of_travel: "clockwise" or "anticlockwise"
+    
+    Returns:
+        bool: True if movement is allowed
+    """
+    dx = next_pos[0] - current_pos[0]
+    dy = next_pos[1] - current_pos[1]
+    
+    if direction_of_travel == "clockwise":
+        # Clockwise movement preferences by segment
+        if segment == 1:  # Top - prefer moving right
+            return dx >= 0
+        elif segment == 2:  # Right - prefer moving down
+            return dy >= 0
+        elif segment == 3:  # Bottom - prefer moving left
+            return dx <= 0
+        elif segment == 4:  # Left - prefer moving up
+            return dy <= 0
+    else:  # anticlockwise
+        # Anticlockwise movement preferences by segment
+        if segment == 1:  # Top - prefer moving left
+            return dx <= 0
+        elif segment == 2:  # Right - prefer moving up
+            return dy <= 0
+        elif segment == 3:  # Bottom - prefer moving right
+            return dx >= 0
+        elif segment == 4:  # Left - prefer moving down
+            return dy >= 0
+    
+    return True  # Default to allowing movement
+
+def group_nearby_obstacles(obstacles, max_distance=100):
+    """
+    Group obstacles that are within max_distance of each other.
+    Returns both grouped obstacles and obstacles that should be removed.
+    
+    Args:
+        obstacles: List of obstacle dictionaries with 'center' key
+        max_distance: Maximum distance between obstacles to group them
+    
+    Returns:
+        tuple: (obstacles_to_keep, obstacles_to_remove)
+    """
+    if not obstacles:
+        return obstacles, []
+    
+    groups = []
+    remaining_obstacles = obstacles.copy()
+    
+    while remaining_obstacles:
+        current_group = [remaining_obstacles.pop(0)]
+        
+        # Keep adding obstacles that are close to any obstacle in the current group
+        found_new = True
+        while found_new:
+            found_new = False
+            for i in range(len(remaining_obstacles) - 1, -1, -1):
+                candidate = remaining_obstacles[i]
+                
+                # Check if candidate is close to any obstacle in current group
+                for group_obstacle in current_group:
+                    dist = math.hypot(
+                        candidate['center'][0] - group_obstacle['center'][0],
+                        candidate['center'][1] - group_obstacle['center'][1]
+                    )
+                    if dist <= max_distance:
+                        current_group.append(remaining_obstacles.pop(i))
+                        found_new = True
+                        break
+                
+                if found_new:
+                    break
+        
+        groups.append(current_group)
+    
+    # Separate single obstacles from groups
+    obstacles_to_keep = []
+    obstacles_to_remove = []
+    
+    for group in groups:
+        if len(group) == 1:
+            # Single obstacle - keep it
+            obstacles_to_keep.append(group[0])
+        else:
+            # Group of 2 or more - remove all obstacles in the group
+            obstacles_to_remove.extend(group)
+            print(f"Removing group of {len(group)} closely spaced obstacles")
+    
+    return obstacles_to_keep, obstacles_to_remove
+
+# ...existing code...
 class Pathfinder:
     def __init__(self, grid_size):
         self.grid_size, self.width, self.height = grid_size, SCREEN_WIDTH // grid_size, SCREEN_HEIGHT // grid_size
@@ -588,9 +821,18 @@ class Pathfinder:
             _, current_node = heapq.heappop(open_set)
             current_pos, current_angle_idx = current_node[:2], current_node[2]
             if current_pos == end_grid_pos and current_angle_idx == end_angle_idx: return self.reconstruct_path(came_from, current_node)
+            
+            # Get current segment for direction filtering
+            current_segment = self.get_segment_for_position(current_pos)
+            
             for dx, dy in [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]:
                 neighbor_pos = (current_pos[0] + dx, current_pos[1] + dy)
                 if not (0 <= neighbor_pos[0] < self.width and 0 <= neighbor_pos[1] < self.height) or self.collision_grid[neighbor_pos]: continue
+                
+                # Check if this direction is allowed based on the direction of travel
+                if not is_direction_allowed(current_pos, neighbor_pos, current_segment, DIRECTION_OF_TRAVEL):
+                    continue
+                
                 move_angle = math.degrees(math.atan2(dy, dx))
                 neighbor_angle_idx = self._discretize_angle(move_angle)
                 neighbor_node, distance_cost = (*neighbor_pos, neighbor_angle_idx), math.hypot(dx, dy)
@@ -607,6 +849,19 @@ class Pathfinder:
         path = [current[:2]];
         while current in came_from: current = came_from[current]; path.append(current[:2])
         return path[::-1]
+    def get_segment_for_position(self, pos):
+        """Get the segment (1=Top, 2=Right, 3=Bottom, 4=Left) for a given position."""
+        x, y = pos[0] * self.grid_size, pos[1] * self.grid_size
+        c1 = INNER_TR[1] + INNER_TR[0]
+        side1 = y + x - c1
+        c2 = INNER_TL[1] - INNER_TL[0]
+        side2 = y - x - c2
+
+        if side1 < 0 and side2 < 0: return 1 # Top
+        elif side1 > 0 and side2 < 0: return 2 # Right
+        elif side1 > 0 and side2 > 0: return 3 # Bottom
+        elif side1 < 0 and side2 > 0: return 4 # Left
+        else: return 1
 
 def generate_equidistant_waypoints(path_nodes, grid_size, distance):
     if not path_nodes or len(path_nodes) < 2: return []
@@ -670,6 +925,14 @@ def main():
                 if event.key == pygame.K_c:
                     obstacle_manager.reset()
                     if robot.mode == 'AUTO': robot.replan_needed = True
+                if event.key == pygame.K_t:
+                    # Toggle direction of travel
+                    global DIRECTION_OF_TRAVEL
+                    DIRECTION_OF_TRAVEL = "anticlockwise" if DIRECTION_OF_TRAVEL == "clockwise" else "clockwise"
+                    print(f"Direction changed to: {DIRECTION_OF_TRAVEL}")
+                    # Clear existing dynamic walls and force replan
+                    obstacle_manager.reset()
+                    if robot.mode == 'AUTO': robot.replan_needed = True
                 if event.key in [pygame.K_w, pygame.K_s, pygame.K_a, pygame.K_d]:
                     robot.set_path([]); robot.sharp_turn_locations.clear()
                     final_goal_pos, final_goal_angle, pathfinding_state = None, None, "IDLE"
@@ -678,17 +941,32 @@ def main():
                     if event.key == pygame.K_s: robot.change_speed(-1)
 
         robot.update(pygame.key.get_pressed())
+        
+        # Handle path recalculation with timing
+        current_time = pygame.time.get_ticks()
         if robot.replan_needed:
-            robot.replan_needed = False
-            if final_goal_pos and final_goal_angle is not None:
-                pathfinder.build_collision_grid(walls_for_robot_logic, obstacle_manager.confirmed_obstacles)
-                new_path_nodes = pathfinder.find_path((robot.x, robot.y), robot.angle, final_goal_pos, final_goal_angle)
-                if new_path_nodes:
-                    raw_waypoints = generate_equidistant_waypoints(new_path_nodes, PATHFINDING_GRID_SIZE, WAYPOINT_DISTANCE)
-                    startup_wp = (robot.x + (WAYPOINT_DISTANCE / 2.0) * math.cos(math.radians(robot.angle)), robot.y + (WAYPOINT_DISTANCE / 2.0) * math.sin(math.radians(robot.angle)))
-                    robot.set_path( raw_waypoints)
-                else: robot.set_path([]); final_goal_pos, final_goal_angle = None, None
-            else: robot.set_path([])
+            # Only attempt replan if enough time has passed (500ms)
+            if current_time - robot.last_replan_attempt >= 500:
+                robot.last_replan_attempt = current_time
+                robot.replan_needed = False
+                
+                if final_goal_pos and final_goal_angle is not None:
+                    pathfinder.build_collision_grid(walls_for_robot_logic, obstacle_manager.confirmed_obstacles)
+                    new_path_nodes = pathfinder.find_path((robot.x, robot.y), robot.angle, final_goal_pos, final_goal_angle)
+                    
+                    if new_path_nodes:
+                        # Successfully found new path
+                        raw_waypoints = generate_equidistant_waypoints(new_path_nodes, PATHFINDING_GRID_SIZE, WAYPOINT_DISTANCE)
+                        startup_wp = (robot.x + (WAYPOINT_DISTANCE / 2.0) * math.cos(math.radians(robot.angle)), robot.y + (WAYPOINT_DISTANCE / 2.0) * math.sin(math.radians(robot.angle)))
+                        robot.set_path(raw_waypoints)
+                        print("Successfully recalculated path")
+                    else:
+                        # Failed to find new path - continue on current path and try again later
+                        robot.replan_needed = True
+                        print("Failed to find new path - continuing on current path, will retry in 500ms")
+                else:
+                    # No goal set - stop the robot
+                    robot.set_path([])
        
         robot.simulate_lidar(walls_for_lidar_simulation)
         robot.estimate_walls()
@@ -697,20 +975,29 @@ def main():
         # This list should only contain what the robot has learned (RANSAC walls) or created (dynamic walls).
         # It must NOT contain the ground-truth physical obstacle walls.
         walls_for_cluster_validation = robot.estimated_walls + dynamic_walls
-        newly_confirmed = obstacle_manager.update(robot.cluster_unassociated_points(), walls_for_cluster_validation, (robot.x, robot.y), walls_for_lidar_simulation)
+        newly_confirmed = obstacle_manager.update(robot.cluster_unassociated_points(), walls_for_cluster_validation, (robot.x, robot.y), walls_for_lidar_simulation, obstacles_for_drawing)
 
         if newly_confirmed:
             robot.replan_needed = True
-            for obs in newly_confirmed:
+            
+            # Group nearby obstacles - remove groups of 2 or more
+            obstacles_to_keep, obstacles_to_remove = group_nearby_obstacles(newly_confirmed, max_distance=100)
+            
+            # Remove grouped obstacles
+            if obstacles_to_remove:
+                obstacle_manager.remove_obstacles(obstacles_to_remove)
+            
+            # Create dynamic walls for remaining single obstacles
+            for obs in obstacles_to_keep:
                 segment, (cx, cy) = obs['segment'], obs['center']
-                 
-                wall_start, wall_end = (cx, cy), None
-                if segment in [1, 3]: # Top & Bottom -> Vertical Wall
-                    wall_end = (cx, COURSE_TOP_LEFT) if abs(cy - COURSE_TOP_LEFT) < abs(cy - (COURSE_TOP_LEFT + COURSE_WIDTH)) else (cx, COURSE_TOP_LEFT + COURSE_WIDTH)
-                elif segment in [2, 4]: # Right & Left -> Horizontal Wall
-                    wall_end = (COURSE_TOP_LEFT, cy) if abs(cx - COURSE_TOP_LEFT) < abs(cx - (COURSE_TOP_LEFT + COURSE_WIDTH)) else (COURSE_TOP_LEFT + COURSE_WIDTH, cy)
-                if wall_end:
-                    obs['dynamic_wall'] = (wall_start[0], wall_start[1], wall_end[0], wall_end[1])
+                obstacle_color = obs.get('color', COLOR_OBSTACLE_RED)
+                
+                print(f"Creating dynamic wall for single obstacle at ({cx}, {cy})")
+                
+                # Create dynamic wall using the direction-based logic
+                obs['dynamic_wall'] = create_dynamic_wall_for_obstacle((cx, cy), obstacle_color, segment, DIRECTION_OF_TRAVEL)
+                print(f"Created dynamic wall: {obs['dynamic_wall']}")
+                print("---")
                     
         obstacle_manager.draw(screen)
         heatmap.add_points(robot.lidar_points); heatmap.decay(HEATMAP_DECAY_RATE)
@@ -768,7 +1055,7 @@ def main():
         steer_x, steer_y = robot.x + ROBOT_SIZE * 0.8 * math.cos(steer_angle_rad), robot.y + ROBOT_SIZE * 0.8 * math.sin(steer_angle_rad)
         pygame.draw.line(screen, (0, 255, 0), robot_pos, (steer_x, steer_y), 2)
 
-        if robot.mode == 'MANUAL': instruction_text_str = "Click: set dest. WASD: drive. R: new obstacles. C: clear dyn. walls." if pathfinding_state=="IDLE" else "Click to set the desired FINAL DIRECTION."
+        if robot.mode == 'MANUAL': instruction_text_str = "Click: set dest. WASD: drive. R: new obstacles. C: clear dyn. walls. T: toggle direction" if pathfinding_state=="IDLE" else "Click to set the desired FINAL DIRECTION."
         elif robot.mode == 'AUTO': instruction_text_str = "Mode: AUTO. Navigating. Press WASD to take over."
         elif robot.mode == 'REVERSING': instruction_text_str = "Mode: REVERSING. Attempting to get unstuck..."
         if robot.replan_needed: instruction_text_str = f"Mode: AUTO. Replanning path... Attempt #{robot.consecutive_replan_count}"
@@ -776,6 +1063,14 @@ def main():
         segment_map = {1: "Top", 2: "Right", 3: "Bottom", 4: "Left"}
         segment_text = f"Segment: {robot.current_segment} ({segment_map.get(robot.current_segment, 'N/A')})"
         screen.blit(small_font.render(segment_text, True, COLOR_TEXT), (10, 40))
+        
+        # Display direction of travel
+        direction_text = f"Direction: {DIRECTION_OF_TRAVEL.capitalize()}"
+        screen.blit(small_font.render(direction_text, True, COLOR_TEXT), (10, 65))
+        
+        # Display obstacle handling info
+        info_text = f"Red obstacles: pass on {'right' if DIRECTION_OF_TRAVEL == 'clockwise' else 'left'}, Green obstacles: pass on {'left' if DIRECTION_OF_TRAVEL == 'clockwise' else 'right'}"
+        screen.blit(small_font.render(info_text, True, COLOR_TEXT), (10, 90))
 
         pygame.display.flip()
         clock.tick(60)
