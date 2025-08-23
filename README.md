@@ -1,4 +1,4 @@
-# Chiuahua-MK8 - WRO 2025 Autonomous Vehicle Project
+# Chiuahua-MK8 - WRO 2025 Future Engineers Category
 
 Welcome to the Chiuahua-MK8 repository! This project contains all the development work for our autonomous vehicle designed for the World Robot Olympiad (WRO) 2025 competition.
 
@@ -71,7 +71,9 @@ This repository represents our complete solution for the WRO 2025 autonomous veh
 
 ## 📞 Team Contact
 
-For questions about this project or collaboration opportunities, please refer to the contact information provided in the Engineering Journal.
+For questions about this project or collaboration opportunities, please contact:
+Michael Shepstone - mgshepstone+wrofe@gmail.com
+Siobhan Kennedy - skenn23@gmail.com
 
 ---
 
