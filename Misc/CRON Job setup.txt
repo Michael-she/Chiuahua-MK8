@@ -1,0 +1,9 @@
+Go and create the CRON JOB To run on reboot. 
+Run the command
+>> crontab -e
+
+Add line in the format:
+@rebo1ot [path to python], [path to script]
+
+
+    @reboot /usr/bin/python3 /home/ubuntu/active/taxi_navigator.py >> /logs/logfile.log 2>
